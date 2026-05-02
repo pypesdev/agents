@@ -64,3 +64,6 @@ curl -sSL https://github.com/pypesdev/agents/raw/main/install.sh | sh
 |Images  |:x:               |
 
 Current as of the latest commit
+
+---
+Maintained by [Pypes LLC](https://app.gethiringfunnel.com) under the HiringFunnel brand.
