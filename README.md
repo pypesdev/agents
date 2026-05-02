@@ -1,3 +1,5 @@
+> **Status (May 2026):** Part of the [HiringFunnel](https://app.gethiringfunnel.com) open-source stack. See also [coldflow](https://github.com/pypesdev/coldflow) and [foxyapply](https://github.com/pypesdev/foxyapply).
+
 <br>
 
 ### ![The Pypes Agent Project](documentation/readme-assets/banner.png)
