@@ -95,7 +95,9 @@ See [`examples/`](./examples) for ready-to-POST agent definitions.
 | File | What it does |
 |---|---|
 | [`examples/echo.json`](./examples/echo.json) | Minimal hello-world agent — one JSON input, no actions. |
-| [`examples/web-summarize.json`](./examples/web-summarize.json) | Illustrative URL-fetch + summarize agent shape. Action wiring is intentionally a no-op until executors land — see the integration table below. |
+| [`examples/web-summarize.json`](./examples/web-summarize.json) | Illustrative URL-fetch + summarize agent shape. Action wiring is intentionally a no-op until those executors land — see the integration table below. |
+| [`examples/webhook.json`](./examples/webhook.json) | Agent with a single `webhook` action; pair with `pypes agent webhook-demo run` to fire it. |
+| [`examples/webhook_executor.rs`](./examples/webhook_executor.rs) | End-to-end Rust example: spins up a local mock receiver, dispatches a webhook action, and prints the captured request. Run with `cargo run --example webhook_executor`. |
 
 <br>
 
@@ -108,13 +110,66 @@ Honest status as of **May 2026**. Anything marked planned has a target release; 
 | HTTP / JSON inputs | :heavy_check_mark: Shipped | `POST /agents`, `GET /agents`, CLI `agent <name> add`. Backed by pickledb on disk. |
 | Qdrant vector-db | :heavy_check_mark: Shipped | `pypes add vector-db` pulls `qdrant/qdrant` via the local Docker socket. |
 | Daemonized server | :heavy_check_mark: Shipped | `pypes start` forks; `pypes start --attatch` runs in the foreground. |
-| Action executors (LLM / webhook / cron) | :hammer_and_wrench: Experimental | `Agent.actions` is a `Vec<String>`; the field is persisted but no runtime executor is dispatched yet. |
+| Action executors → webhook (HTTP POST) | :heavy_check_mark: Shipped | First concrete executor. Each `Agent.actions` entry is a JSON spec like `{"type":"webhook", ...}`; see [Action Executors → Webhook](#action-executors--webhook). |
+| Action executors → cron / LLM | :calendar: Planned | Cron is the next executor; LLM follows. Same `{"type": "..."}` discriminator as webhook. |
 | Gmail | :calendar: Planned for v0.1.0 | Not implemented. Earlier README claimed "in progress" — that was stale; no module exists in `src/`. |
 | SMS (Twilio) | :calendar: Planned for v0.1.0 | Not implemented. |
 | Vision / image inputs | :calendar: Planned for v0.2.0 | Not implemented. JSON-only inputs today. |
 | Web UI | :hammer_and_wrench: Experimental | `src/server/templates/` ships layout/index stubs; no routes mount them yet. |
 
 Legend: :heavy_check_mark: shipped • :hammer_and_wrench: experimental • :calendar: planned.
+
+<br>
+
+## Action Executors → Webhook
+
+Agents can now act, not just store. Each entry in `Agent.actions` is a
+JSON-encoded spec; the executor dispatches by the `type` discriminator.
+
+The first shipped executor is **`webhook`** — a single HTTP POST to a target
+URL with a JSON payload and optional headers.
+
+```jsonc
+// One entry inside Agent.actions
+{
+  "type": "webhook",
+  "url": "https://example.com/hook",
+  "headers": { "Authorization": "Bearer demo-token" },
+  "payload": { "event": "agent.acted", "n": 1 }
+}
+```
+
+Run every action stored on an agent through the executor pipeline:
+
+```bash
+pypes agent <NAME> run
+# [0] webhook → 200 (11 bytes)
+```
+
+A 2xx response counts as success; anything else surfaces as a `NonSuccessStatus`
+error so the caller can decide whether to retry. `headers` and `payload` are
+optional (payload defaults to `{}`).
+
+### Worked example
+
+```bash
+cargo run --example webhook_executor
+```
+
+The example boots a tiny in-process axum receiver on an ephemeral port,
+constructs an in-memory `Agent` with one webhook action pointed at it, and
+prints both the executor outcome and the body the receiver got:
+
+```
+→ stored action: {"headers":{"Authorization":"Bearer demo-token"},"payload":{"event":"agent.acted","n":1},"type":"webhook","url":"http://127.0.0.1:49207/hook"}
+← webhook[0] status=200 body={"ok":true}
+✓ mock receiver got 1 request(s):
+    {"event":"agent.acted","n":1}
+```
+
+No external services needed. Tests use [`wiremock`](https://crates.io/crates/wiremock)
+to assert on the exact request the executor sends — see
+[`src/executors/webhook.rs`](./src/executors/webhook.rs).
 
 <br>
 
@@ -129,7 +184,8 @@ pypes add vector-db                 # pull qdrant/qdrant via Docker
 pypes rm agent <NAME>               # remove a single agent
 pypes rm db                         # wipe the agents database
 pypes ls                            # list known agents
-pypes agent <NAME> add '<JSON>'     # append a JSON input to an agent
+pypes agent <NAME> add '<JSON>'     # append a JSON input (or action spec) to an agent
+pypes agent <NAME> run              # execute every stored action through the executor pipeline
 ```
 
 <br>
