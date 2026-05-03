@@ -1,4 +1,6 @@
-> **Status (May 2026):** Part of the [HiringFunnel](https://app.gethiringfunnel.com) open-source stack. See also [coldflow](https://github.com/pypesdev/coldflow) and [foxyapply](https://github.com/pypesdev/foxyapply).
+[![pr_check](https://github.com/pypesdev/agents/actions/workflows/pr-check.yaml/badge.svg)](https://github.com/pypesdev/agents/actions/workflows/pr-check.yaml)
+
+> **Status (May 2026):** Active. Part of the [HiringFunnel](https://app.gethiringfunnel.com) open-source stack. See also [coldflow](https://github.com/pypesdev/coldflow) and [foxyapply](https://github.com/pypesdev/foxyapply).
 
 <br>
 
@@ -12,25 +14,19 @@
 
 <br>
 
-The Pypes Project is a fast and lightweight, feature packed, and user friendly tool that lets you do more by creating autonomous AI agents.
+The Pypes Project is a fast and lightweight tool for defining autonomous AI agents that perceive (JSON inputs streamed in over an HTTP API) and act (named actions you wire up).
 
-Save time and effort easier and more powerfully than ever before.
-
-Don't just take my word for it!
+It ships as a single Rust binary — a CLI plus a daemonized HTTP server backed by an embedded JSON store.
 
 <br>
 
 <img src="documentation/readme-assets/Features.png" alt="Just let the features speak for themselves." height=35px>
 
-- Give your agents perception, stream anything into it as long as it's JSON.
-- Infinite numbers of agents with unlimited actions **and** history each.
-- Seriously kickASS performance 🥾🤯 because rust masterrace.
-- Seamless integration with your [existing tools and applications](#the-pypes-project-works-with-the-following-systems).
-- A superbly scriptable API to automate your workflows in a cinch, 
-- Gorgeous <img src="documentation/readme-assets/eyecandy.svg" height="16px" alt="eye candy"/> and ear candy for your viewing and listening pleasure,
-- Documentation you'll actually want to read <sub>(all in this readme)</sub>
-- And oodles more!
-
+- Stream perception into agents — every input is just JSON.
+- Persist agents and their inputs to disk via embedded [pickledb](https://crates.io/crates/pickledb) — no external database to run.
+- HTTP API (`axum`) for creating and listing agents from any language.
+- Optional Qdrant vector-db resource pulled via Docker for embeddings work.
+- Single static binary — `cargo build --release` produces one artifact.
 
 <br>
 
@@ -48,22 +44,116 @@ Don't just take my word for it!
 ```bash
 curl -sSL https://github.com/pypesdev/agents/raw/main/install.sh | sh
 ```
+
+Or build from source:
+
+```bash
+git clone https://github.com/pypesdev/agents.git
+cd agents
+cargo build --release
+./target/release/pypes --help
+```
+
 <br>
+
+## Quickstart
+
+The smallest end-to-end loop — create an agent, feed it a JSON input, list it back. State is persisted under `~/.agents/db/`.
+
+```bash
+# 1. Create a named agent
+pypes add agent echo
+
+# 2. Stream a JSON input into it
+pypes agent echo add '{"event":"hello","payload":"world"}'
+
+# 3. List agents
+pypes ls
+# => Agent echo
+```
+
+Prefer HTTP? Start the server attached to your terminal and POST agent definitions directly:
+
+```bash
+pypes start --attatch -p 7979
+
+# In another shell:
+curl -X POST http://localhost:7979/agents \
+  -H 'Content-Type: application/json' \
+  -d @examples/echo.json
+
+curl http://localhost:7979/agents
+# => [{"name":"echo","inputs":[{"event":"hello","payload":"world"}],"actions":[]}]
+```
+
+See [`examples/`](./examples) for ready-to-POST agent definitions.
+
 <br>
 
+## Examples
 
-## The Pypes Project works with the following systems:
-- :x: = Not supported yet
-- :screwdriver: = In progress
-- :heavy_check_mark: = Supported
- 
-| System | Status           |
-|--------|------------------|
-|Gmail   |:screwdriver:     |
-|SMS     |:x:               |
-|Images  |:x:               |
+| File | What it does |
+|---|---|
+| [`examples/echo.json`](./examples/echo.json) | Minimal hello-world agent — one JSON input, no actions. |
+| [`examples/web-summarize.json`](./examples/web-summarize.json) | Illustrative URL-fetch + summarize agent shape. Action wiring is intentionally a no-op until executors land — see the integration table below. |
 
-Current as of the latest commit
+<br>
+
+## Integrations
+
+Honest status as of **May 2026**. Anything marked planned has a target release; anything else is fiction we are not shipping yet.
+
+| Integration | Status | Notes |
+|---|---|---|
+| HTTP / JSON inputs | :heavy_check_mark: Shipped | `POST /agents`, `GET /agents`, CLI `agent <name> add`. Backed by pickledb on disk. |
+| Qdrant vector-db | :heavy_check_mark: Shipped | `pypes add vector-db` pulls `qdrant/qdrant` via the local Docker socket. |
+| Daemonized server | :heavy_check_mark: Shipped | `pypes start` forks; `pypes start --attatch` runs in the foreground. |
+| Action executors (LLM / webhook / cron) | :hammer_and_wrench: Experimental | `Agent.actions` is a `Vec<String>`; the field is persisted but no runtime executor is dispatched yet. |
+| Gmail | :calendar: Planned for v0.1.0 | Not implemented. Earlier README claimed "in progress" — that was stale; no module exists in `src/`. |
+| SMS (Twilio) | :calendar: Planned for v0.1.0 | Not implemented. |
+| Vision / image inputs | :calendar: Planned for v0.2.0 | Not implemented. JSON-only inputs today. |
+| Web UI | :hammer_and_wrench: Experimental | `src/server/templates/` ships layout/index stubs; no routes mount them yet. |
+
+Legend: :heavy_check_mark: shipped • :hammer_and_wrench: experimental • :calendar: planned.
+
+<br>
+
+## CLI reference
+
+```
+pypes start [--attatch] [-p PORT]   # start the HTTP server (port 7979 by default)
+pypes stop                          # kill a daemonized server
+pypes status                        # check whether the server is reachable
+pypes add agent <NAME>              # create an empty agent
+pypes add vector-db                 # pull qdrant/qdrant via Docker
+pypes rm agent <NAME>               # remove a single agent
+pypes rm db                         # wipe the agents database
+pypes ls                            # list known agents
+pypes agent <NAME> add '<JSON>'     # append a JSON input to an agent
+```
+
+<br>
+
+## HTTP API
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/agents` | — | `Agent[]` |
+| `POST` | `/agents` | `{name, inputs: any[], actions: string[]}` | `{records_created: number}` |
+
+<br>
+
+## Development
+
+```bash
+cargo build           # debug build
+cargo test            # run the test suite (matches the PR-check workflow)
+cargo build --release # production binary at target/release/pypes
+```
+
+PRs run `cargo test` via [`.github/workflows/pr-check.yaml`](.github/workflows/pr-check.yaml). Releases are cut by pushing a `vX.Y.Z` tag — see [`.github/workflows/release.yaml`](.github/workflows/release.yaml).
+
+<br>
 
 ---
 Maintained by [Pypes LLC](https://app.gethiringfunnel.com) under the HiringFunnel brand.

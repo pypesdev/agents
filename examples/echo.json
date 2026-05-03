@@ -1,0 +1,7 @@
+{
+  "name": "echo",
+  "inputs": [
+    { "event": "hello", "payload": "world" }
+  ],
+  "actions": []
+}
