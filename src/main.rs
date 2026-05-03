@@ -183,6 +183,15 @@ fn handle_agent_command(agent_args: &AgentCommandArgs, db: &mut PickleDb) {
                     executors::ExecutionOutcome::Webhook(Err(e)) => {
                         println!("[{idx}] webhook FAILED: {e}");
                     }
+                    executors::ExecutionOutcome::Cron(Ok(scheduled)) => {
+                        println!(
+                            "[{idx}] cron `{}` → next fire {}",
+                            scheduled.expression, scheduled.next_fire
+                        );
+                    }
+                    executors::ExecutionOutcome::Cron(Err(e)) => {
+                        println!("[{idx}] cron FAILED: {e}");
+                    }
                     executors::ExecutionOutcome::Unrecognized { raw, error } => {
                         println!("[{idx}] unrecognized action ({error}): {raw}");
                     }

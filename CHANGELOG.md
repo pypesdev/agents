@@ -14,10 +14,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - README section: **Action Executors → Webhook**.
 - `wiremock` dev-dependency for mock-server-backed executor tests.
 - `src/lib.rs` so the binary's modules are also reachable from `examples/` and downstream crates.
+- Second action executor: `cron` (`src/executors/cron.rs`). A `cron` action wraps another `Action` with a 5-, 6-, or 7-field cron expression. Includes a pure `parse` / `next_fire_after` API and an in-process `Scheduler` with a `tick(now)` shape so unit tests can drive it with a mock clock and the real loop can drive it with `Utc::now()`.
+- `examples/cron_executor.rs` — end-to-end example: schedules a webhook to fire on the next per-second tick and exits within ~1 second.
+- README section: **Action Executors → Cron**.
+- `cron` and `chrono` dependencies (chrono with `clock` + `serde` features).
 
 ### Changed
 - `Agent.actions` storage is unchanged on disk (`Vec<String>`), but each entry is now interpreted as a typed `Action` enum at execution time. Strings that don't parse fall through as `Unrecognized` rather than blocking the pipeline.
-- Integrations table: webhook executor flipped from "experimental" to "shipped"; cron + LLM executors split out as planned with the same discriminator.
+- `ExecutionOutcome` gains a `Cron(Result<CronScheduled, CronError>)` variant. `process_actions` reports the next computed fire time for cron entries without firing them; firing is handled by the scheduler.
+- Integrations table: webhook + cron executors are now shipped; only LLM remains in the planned column.
 
 ## [v0.0.6] - 2026-05-03
 

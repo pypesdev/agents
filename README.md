@@ -98,6 +98,7 @@ See [`examples/`](./examples) for ready-to-POST agent definitions.
 | [`examples/web-summarize.json`](./examples/web-summarize.json) | Illustrative URL-fetch + summarize agent shape. Action wiring is intentionally a no-op until those executors land — see the integration table below. |
 | [`examples/webhook.json`](./examples/webhook.json) | Agent with a single `webhook` action; pair with `pypes agent webhook-demo run` to fire it. |
 | [`examples/webhook_executor.rs`](./examples/webhook_executor.rs) | End-to-end Rust example: spins up a local mock receiver, dispatches a webhook action, and prints the captured request. Run with `cargo run --example webhook_executor`. |
+| [`examples/cron_executor.rs`](./examples/cron_executor.rs) | End-to-end Rust example: schedules a webhook to fire on the next per-second tick via the in-process scheduler, then exits. Run with `cargo run --example cron_executor`. |
 
 <br>
 
@@ -111,7 +112,8 @@ Honest status as of **May 2026**. Anything marked planned has a target release; 
 | Qdrant vector-db | :heavy_check_mark: Shipped | `pypes add vector-db` pulls `qdrant/qdrant` via the local Docker socket. |
 | Daemonized server | :heavy_check_mark: Shipped | `pypes start` forks; `pypes start --attatch` runs in the foreground. |
 | Action executors → webhook (HTTP POST) | :heavy_check_mark: Shipped | First concrete executor. Each `Agent.actions` entry is a JSON spec like `{"type":"webhook", ...}`; see [Action Executors → Webhook](#action-executors--webhook). |
-| Action executors → cron / LLM | :calendar: Planned | Cron is the next executor; LLM follows. Same `{"type": "..."}` discriminator as webhook. |
+| Action executors → cron (scheduled) | :heavy_check_mark: Shipped | Wraps another action with a 5-, 6-, or 7-field cron expression and fires it on schedule via an in-process scheduler. See [Action Executors → Cron](#action-executors--cron). |
+| Action executors → LLM | :calendar: Planned | Same `{"type": "..."}` discriminator as webhook/cron. |
 | Gmail | :calendar: Planned for v0.1.0 | Not implemented. Earlier README claimed "in progress" — that was stale; no module exists in `src/`. |
 | SMS (Twilio) | :calendar: Planned for v0.1.0 | Not implemented. |
 | Vision / image inputs | :calendar: Planned for v0.2.0 | Not implemented. JSON-only inputs today. |
@@ -170,6 +172,71 @@ prints both the executor outcome and the body the receiver got:
 No external services needed. Tests use [`wiremock`](https://crates.io/crates/wiremock)
 to assert on the exact request the executor sends — see
 [`src/executors/webhook.rs`](./src/executors/webhook.rs).
+
+<br>
+
+## Action Executors → Cron
+
+Cron lets agents act on a schedule — required for any "check inbox every 10
+minutes" or "run nightly summary" pattern. A `cron` action wraps another action
+with a cron expression; an in-process scheduler fires the wrapped action on
+each tick.
+
+```jsonc
+// One entry inside Agent.actions
+{
+  "type": "cron",
+  "expression": "*/5 * * * *",
+  "action": {
+    "type": "webhook",
+    "url": "https://example.com/tick",
+    "payload": { "tick": true }
+  }
+}
+```
+
+The `expression` field accepts:
+
+- **5-field standard cron** — `min hour day-of-month month day-of-week` (e.g.
+  `*/5 * * * *` for every five minutes). `sec` is padded to `0` and `year` to `*`.
+- **6-field cron with seconds** — `sec min hour dom mon dow` (e.g.
+  `* * * * * *` for every second).
+- **7-field cron with year** — passed through to the underlying parser.
+
+`pypes agent <NAME> run` reports the next computed fire time for each cron
+action without firing it; the actual firing happens via the scheduler:
+
+```bash
+pypes agent scheduled-pinger run
+# [0] cron `*/5 * * * *` → next fire 2026-05-03 12:05:00 UTC
+```
+
+Out of scope for v1: distributed scheduling, persistent missed-fire catchup
+across restarts. The scheduler is single-process and fires only while it's
+running.
+
+### Worked example
+
+```bash
+cargo run --example cron_executor
+```
+
+The example boots a tiny in-process axum receiver on an ephemeral port, builds
+a `CronAction` whose target is a webhook pointed at the receiver, advances the
+[`Scheduler`](./src/executors/cron.rs) by one real tick, and prints both the
+fired outcome and the body the receiver got:
+
+```
+→ stored action: {"type":"cron","expression":"* * * * * *","action":{"type":"webhook","url":"http://127.0.0.1:51636/hook","headers":{},"payload":{"event":"cron.tick","n":1}}}
+⏲ next fire scheduled at 2026-05-03 09:10:56 UTC (in 253 ms)
+← cron[0] fired webhook → status=200 body={"ok":true}
+✓ mock receiver got 1 request(s):
+    {"event":"cron.tick","n":1}
+```
+
+The example terminates within ~1 second because the cron expression fires on
+the next per-second boundary. Tests drive the scheduler with a fixed mock
+clock and a tight real-time clock — see [`src/executors/cron.rs`](./src/executors/cron.rs).
 
 <br>
 
