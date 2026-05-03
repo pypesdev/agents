@@ -1,0 +1,14 @@
+{
+  "name": "web-summarize",
+  "inputs": [
+    {
+      "kind": "http_url",
+      "url": "https://example.com",
+      "fetched_at": null
+    }
+  ],
+  "actions": [
+    "fetch_url",
+    "summarize"
+  ]
+}
