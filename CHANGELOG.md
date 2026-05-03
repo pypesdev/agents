@@ -4,6 +4,21 @@ All notable changes to the Pypes agent platform are documented in this file.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves 0.x.
 
+## [Unreleased]
+
+### Added
+- `src/executors/` module with the first concrete action executor: `webhook` (HTTP POST). Each `Agent.actions` entry is now a JSON spec like `{"type":"webhook","url":...,"headers":{...},"payload":{...}}` — typed, dispatched, and returns a structured outcome.
+- `pypes agent <NAME> run` CLI subcommand that runs every stored action through the executor pipeline.
+- `examples/webhook_executor.rs` — end-to-end example with an in-process mock receiver. `cargo run --example webhook_executor`.
+- `examples/webhook.json` — minimal agent definition with one webhook action.
+- README section: **Action Executors → Webhook**.
+- `wiremock` dev-dependency for mock-server-backed executor tests.
+- `src/lib.rs` so the binary's modules are also reachable from `examples/` and downstream crates.
+
+### Changed
+- `Agent.actions` storage is unchanged on disk (`Vec<String>`), but each entry is now interpreted as a typed `Action` enum at execution time. Strings that don't parse fall through as `Unrecognized` rather than blocking the pipeline.
+- Integrations table: webhook executor flipped from "experimental" to "shipped"; cron + LLM executors split out as planned with the same discriminator.
+
 ## [v0.0.6] - 2026-05-03
 
 ### Added

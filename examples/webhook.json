@@ -1,0 +1,7 @@
+{
+  "name": "webhook-demo",
+  "inputs": [],
+  "actions": [
+    "{\"type\":\"webhook\",\"url\":\"https://httpbin.org/post\",\"headers\":{\"Authorization\":\"Bearer demo-token\"},\"payload\":{\"event\":\"agent.acted\",\"n\":1}}"
+  ]
+}

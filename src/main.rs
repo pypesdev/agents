@@ -2,14 +2,14 @@
 // What should it do? it should be able to orchestrate agents working together. "Agents can be loosely defined as perceptive autonomous programs"
 // Perceptive in the sense they should be able to be always running and having inputs "streaming" into their "process"
 // Autonomous in the sense they should maintain a space of possible actions and weigh decisions on which action to take
-mod agent;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use pickledb::PickleDb;
-mod daemon;
-mod db;
-mod server;
-use server::server::{initialize_server, status};
-mod resource;
+use pypes::agent;
+use pypes::daemon;
+use pypes::db;
+use pypes::executors;
+use pypes::resource;
+use pypes::server::server::{initialize_server, status};
 #[derive(Parser)]
 #[command(
     name = "pypes",
@@ -56,6 +56,8 @@ enum AgentCommands {
         #[arg(help = "Specifies the input or action to be added to the agent.")]
         input: String,
     },
+    #[clap(about = "Runs every action stored on the agent through the executor pipeline.")]
+    Run,
 }
 
 #[derive(Args)]
@@ -160,6 +162,31 @@ fn handle_agent_command(agent_args: &AgentCommandArgs, db: &mut PickleDb) {
             match agent.add_input(input) {
                 Some(_value) => agent.write_agent_update(db),
                 None => return,
+            }
+        }
+        AgentCommands::Run => {
+            let agent = match agent::util::get_agent(&agent_args.agent_name, db) {
+                Some(agent) => agent,
+                None => {
+                    println!("Agent not found: {}", agent_args.agent_name);
+                    return;
+                }
+            };
+            let outcomes = tokio::runtime::Runtime::new()
+                .expect("failed to start tokio runtime")
+                .block_on(executors::process_actions(&agent));
+            for (idx, outcome) in outcomes.iter().enumerate() {
+                match outcome {
+                    executors::ExecutionOutcome::Webhook(Ok(res)) => {
+                        println!("[{idx}] webhook → {} ({} bytes)", res.status, res.body.len());
+                    }
+                    executors::ExecutionOutcome::Webhook(Err(e)) => {
+                        println!("[{idx}] webhook FAILED: {e}");
+                    }
+                    executors::ExecutionOutcome::Unrecognized { raw, error } => {
+                        println!("[{idx}] unrecognized action ({error}): {raw}");
+                    }
+                }
             }
         }
     }
