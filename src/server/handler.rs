@@ -2,20 +2,19 @@ pub mod agents {
     use crate::agent::agent::Agent;
     use crate::server::requests;
     use crate::server::responses;
+    use crate::server::server::AppState;
     use axum::{
         extract::{Query, State},
         response::IntoResponse,
         Json,
     };
-    use pickledb::PickleDb;
     use serde::Deserialize;
-    use std::sync::{Arc, RwLock};
-    type Db = Arc<RwLock<PickleDb>>;
+
     pub async fn agents_index(
         _pagination: Option<Query<requests::Pagination>>,
-        State(db): State<Db>,
+        State(state): State<AppState>,
     ) -> impl IntoResponse {
-        let db = db.read().unwrap();
+        let db = state.db.read().unwrap();
         let mut agents: Vec<Agent> = Vec::new();
         for agent_iter in db.get_all() {
             if let Some(curr_agent) = db.get::<Agent>(&agent_iter) {
@@ -35,7 +34,7 @@ pub mod agents {
     }
 
     pub async fn agents_create(
-        State(db): State<Db>,
+        State(state): State<AppState>,
         Json(input): Json<CreateAgent>,
     ) -> impl IntoResponse {
         let agent = Agent {
@@ -43,7 +42,10 @@ pub mod agents {
             inputs: input.inputs,
             actions: input.actions,
         };
-        db.write().unwrap().set(&agent.name, &agent).unwrap();
+        state.db.write().unwrap().set(&agent.name, &agent).unwrap();
+        // The scheduler runs from a snapshot of the agents store; signal it
+        // to rebuild so any cron actions on the new agent become live.
+        state.scheduler.reload();
         let response = responses::CreateAgentResponse { records_created: 1 };
         Json(response)
     }
@@ -52,6 +54,8 @@ pub mod agents {
 #[cfg(test)]
 mod tests {
     use crate::agent::agent::Agent;
+    use crate::scheduler_loop::SchedulerHandle;
+    use crate::server::server::AppState;
 
     use axum::{
         body::Body,
@@ -81,9 +85,12 @@ mod tests {
             .uri("/agents")
             .body(Body::empty())
             .unwrap();
-        let db = Arc::new(RwLock::new(db));
+        let state = AppState {
+            db: Arc::new(RwLock::new(db)),
+            scheduler: SchedulerHandle::detached(),
+        };
 
-        let app = crate::server::server::app().with_state(db);
+        let app = crate::server::server::app().with_state(state);
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response.into_body().collect().await.unwrap().to_bytes();

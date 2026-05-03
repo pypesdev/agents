@@ -1,6 +1,7 @@
 use super::handler;
 use crate::daemon;
 use crate::db::DbConfig;
+use crate::scheduler_loop::{self, SchedulerHandle};
 use axum::{routing::get, Router};
 use pickledb::PickleDb;
 use std::{
@@ -8,6 +9,14 @@ use std::{
     net::TcpStream,
     sync::{Arc, RwLock},
 };
+
+/// Shared state passed to axum handlers. Carries the agents store plus a
+/// handle to the running cron scheduler so mutations can trigger a rebuild.
+#[derive(Clone)]
+pub struct AppState {
+    pub db: Arc<RwLock<PickleDb>>,
+    pub scheduler: SchedulerHandle,
+}
 
 pub fn initialize_server(port: &String, attatch: &bool, mut db: DbConfig) {
     db.config_db.set("port", port).unwrap();
@@ -26,8 +35,13 @@ pub fn initialize_server(port: &String, attatch: &bool, mut db: DbConfig) {
 #[tokio::main]
 async fn serve(port: u16, db: PickleDb) {
     let db = Arc::new(RwLock::new(db));
+    let scheduler = scheduler_loop::spawn(db.clone());
+    let state = AppState {
+        db: db.clone(),
+        scheduler,
+    };
 
-    let app = app().with_state(db);
+    let app = app().with_state(state);
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await;
 
@@ -40,7 +54,7 @@ async fn serve(port: u16, db: PickleDb) {
     }
 }
 
-pub fn app() -> Router<Arc<RwLock<PickleDb>>> {
+pub fn app() -> Router<AppState> {
     Router::new().route(
         "/agents",
         get(handler::agents::agents_index).post(handler::agents::agents_create),

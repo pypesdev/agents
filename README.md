@@ -204,16 +204,25 @@ The `expression` field accepts:
 - **7-field cron with year** — passed through to the underlying parser.
 
 `pypes agent <NAME> run` reports the next computed fire time for each cron
-action without firing it; the actual firing happens via the scheduler:
+action without firing it; the actual firing happens automatically once the
+server is running:
 
 ```bash
 pypes agent scheduled-pinger run
 # [0] cron `*/5 * * * *` → next fire 2026-05-03 12:05:00 UTC
 ```
 
+`pypes start` (daemonized or `--attatch`) launches a background scheduler
+loop that loads every cron action across all agents on boot, sleeps until
+the next due tick, fires the wrapped action (currently `webhook`), and
+advances. Each fire is logged to the daemon stderr at
+`~/.agents/tmp/daemon.err`. Creating a new agent via `POST /agents`
+triggers an in-process reload so newly stored cron actions become live
+without restarting the daemon.
+
 Out of scope for v1: distributed scheduling, persistent missed-fire catchup
-across restarts. The scheduler is single-process and fires only while it's
-running.
+across daemon restarts (the loop starts fresh from `Utc::now()` on boot),
+and per-tenant isolation.
 
 ### Worked example
 
