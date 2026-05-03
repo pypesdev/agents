@@ -59,6 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ExecutionOutcome::Webhook(Err(e)) => {
                 println!("← webhook[{idx}] error: {e}");
             }
+            ExecutionOutcome::Cron(Ok(s)) => {
+                println!(
+                    "← cron[{idx}] scheduled `{}` next at {}",
+                    s.expression, s.next_fire
+                );
+            }
+            ExecutionOutcome::Cron(Err(e)) => {
+                println!("← cron[{idx}] error: {e}");
+            }
             ExecutionOutcome::Unrecognized { raw, error } => {
                 println!("← unrecognized[{idx}] {error}: {raw}");
             }
