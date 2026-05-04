@@ -18,6 +18,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 - `examples/cron_executor.rs` — end-to-end example: schedules a webhook to fire on the next per-second tick and exits within ~1 second.
 - README section: **Action Executors → Cron**.
 - `cron` and `chrono` dependencies (chrono with `clock` + `serde` features).
+- `src/scheduler_loop.rs` — long-running tokio task spawned by `pypes start` that loads every cron action across all agents on boot, fires due entries through the existing webhook executor, advances the scheduler, and logs each fire to the daemon's stderr (`~/.agents/tmp/daemon.err`). `POST /agents` now triggers an in-process reload so newly stored cron actions go live without restarting the daemon.
 
 ### Changed
 - `Agent.actions` storage is unchanged on disk (`Vec<String>`), but each entry is now interpreted as a typed `Action` enum at execution time. Strings that don't parse fall through as `Unrecognized` rather than blocking the pipeline.
