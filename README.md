@@ -152,6 +152,11 @@ A 2xx response counts as success; anything else surfaces as a `NonSuccessStatus`
 error so the caller can decide whether to retry. `headers` and `payload` are
 optional (payload defaults to `{}`).
 
+The shared HTTP client used by `process_actions` carries a **30-second
+timeout** (connection + read combined). If the target does not respond within
+that window the executor returns `WebhookError::Timeout`, distinct from generic
+transport errors so callers can apply different retry semantics.
+
 ### Worked example
 
 ```bash

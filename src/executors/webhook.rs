@@ -38,6 +38,8 @@ pub struct WebhookResult {
 pub enum WebhookError {
     InvalidHeaderName(String),
     InvalidHeaderValue(String),
+    /// The remote did not respond within the configured timeout window.
+    Timeout,
     Transport(reqwest::Error),
     NonSuccessStatus { status: u16, body: String },
 }
@@ -49,6 +51,7 @@ impl std::fmt::Display for WebhookError {
             WebhookError::InvalidHeaderValue(name) => {
                 write!(f, "invalid header value for {name}")
             }
+            WebhookError::Timeout => write!(f, "webhook request timed out"),
             WebhookError::Transport(e) => write!(f, "webhook transport error: {e}"),
             WebhookError::NonSuccessStatus { status, body } => {
                 write!(f, "webhook returned non-success status {status}: {body}")
@@ -58,6 +61,14 @@ impl std::fmt::Display for WebhookError {
 }
 
 impl std::error::Error for WebhookError {}
+
+fn map_transport(e: reqwest::Error) -> WebhookError {
+    if e.is_timeout() {
+        WebhookError::Timeout
+    } else {
+        WebhookError::Transport(e)
+    }
+}
 
 /// POST `action.payload` as JSON to `action.url`, returning the response status
 /// and body on success or a structured error otherwise.
@@ -80,9 +91,9 @@ pub async fn execute_webhook(
         request = request.header(header_name, header_value);
     }
 
-    let response = request.send().await.map_err(WebhookError::Transport)?;
+    let response = request.send().await.map_err(map_transport)?;
     let status = response.status().as_u16();
-    let body = response.text().await.map_err(WebhookError::Transport)?;
+    let body = response.text().await.map_err(map_transport)?;
 
     if (200..300).contains(&status) {
         Ok(WebhookResult { status, body })
@@ -93,6 +104,8 @@ pub async fn execute_webhook(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -189,5 +202,36 @@ mod tests {
         let client = reqwest::Client::new();
         let err = execute_webhook(&client, &action).await.unwrap_err();
         assert!(matches!(err, WebhookError::InvalidHeaderName(_)));
+    }
+
+    #[tokio::test]
+    async fn times_out_on_slow_target() {
+        let server = MockServer::start().await;
+
+        // Respond after 2 s — longer than the 1 s client timeout.
+        Mock::given(method("POST"))
+            .and(path("/slow"))
+            .respond_with(
+                ResponseTemplate::new(200).set_delay(Duration::from_secs(2)),
+            )
+            .mount(&server)
+            .await;
+
+        let action = WebhookAction {
+            url: format!("{}/slow", server.uri()),
+            headers: HashMap::new(),
+            payload: None,
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .unwrap();
+
+        let err = execute_webhook(&client, &action).await.unwrap_err();
+        assert!(
+            matches!(err, WebhookError::Timeout),
+            "expected Timeout, got {err:?}"
+        );
     }
 }

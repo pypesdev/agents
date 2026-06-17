@@ -10,6 +10,8 @@
 pub mod cron;
 pub mod webhook;
 
+use std::time::Duration;
+
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +65,10 @@ pub fn parse_action(raw: &str) -> Result<Action, serde_json::Error> {
 /// Cron actions are not fired here; instead we compute and report the next
 /// fire time. Real firing happens in [`cron::Scheduler`].
 pub async fn process_actions(agent: &Agent) -> Vec<ExecutionOutcome> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("failed to build HTTP client");
     let now = Utc::now();
     let mut outcomes = Vec::with_capacity(agent.actions.len());
     for raw in &agent.actions {
