@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use axum::{extract::State, routing::post, Json, Router};
 use chrono::Utc;
 use pypes::executors::cron::{CronAction, Scheduler};
-use pypes::executors::webhook::{execute_webhook, WebhookAction};
+use pypes::executors::webhook::{execute_webhook, WebhookAction, RESPONSE_BODY_LIMIT_BYTES};
 use pypes::executors::Action;
 use serde_json::{json, Value};
 
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for idx in due {
         let entry = &scheduler.entries()[idx];
         match entry.action.action.as_ref() {
-            Action::Webhook(spec) => match execute_webhook(&client, spec).await {
+            Action::Webhook(spec) => match execute_webhook(&client, spec, RESPONSE_BODY_LIMIT_BYTES).await {
                 Ok(res) => println!(
                     "← cron[{idx}] fired webhook → status={} body={}",
                     res.status, res.body
