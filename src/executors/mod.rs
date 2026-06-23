@@ -70,7 +70,12 @@ pub async fn process_actions(agent: &Agent) -> Vec<ExecutionOutcome> {
         match parse_action(raw) {
             Ok(Action::Webhook(spec)) => {
                 outcomes.push(ExecutionOutcome::Webhook(
-                    webhook::execute_webhook(&client, &spec).await,
+                    webhook::execute_webhook(
+                        &client,
+                        &spec,
+                        webhook::RESPONSE_BODY_LIMIT_BYTES,
+                    )
+                    .await,
                 ));
             }
             Ok(Action::Cron(spec)) => {

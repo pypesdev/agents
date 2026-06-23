@@ -133,6 +133,17 @@ A 2xx response counts as success; anything else surfaces as a `NonSuccessStatus`
 error so the caller can decide whether to retry. `headers` and `payload` are
 optional (payload defaults to `{}`).
 
+**Response body cap (64 KiB):** The executor reads at most **64 KiB** from the
+response body. Webhook targets are expected to return only a short
+acknowledgement — reading an unbounded body would be a denial-of-service
+surface. Behaviour when the cap is hit:
+
+- **2xx response:** body is truncated to 64 KiB and `WebhookResult::body_truncated`
+  is set to `true`.
+- **Non-2xx response:** returns `WebhookError::ResponseTooLarge { status, captured_bytes }`
+  instead of `NonSuccessStatus`, so a caller is never handed a giant allocation
+  in the error payload.
+
 ### Worked example
 
 ```bash
